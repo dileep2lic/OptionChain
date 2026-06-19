@@ -18,6 +18,19 @@ import dj_database_url
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load environment variables from .env file
+# from dotenv import load_dotenv
+# load_dotenv(Path(__file__).resolve().parent / '.env')
+
+
+# Load environment variables from .env file (Render के लिए सुरक्षित)
+try:
+    from dotenv import load_dotenv
+    # यह आपके प्रोजेक्ट के मुख्य फोल्डर से .env को लोड करेगा
+    load_dotenv(BASE_DIR / '.env') 
+except ImportError:
+    # Render पर यह पैकेज नहीं होगा, तो यह चुपचाप आगे बढ़ जाएगा
+    pass
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
@@ -26,8 +39,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 import os, dj_database_url
 
 # ── Secret Key — Render पर Environment Variable से आएगा ──────────────────
-# SECRET_KEY = os.environ.get('SECRET_KEY')
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'your-fallback-local-dev-key')
+SECRET_KEY = os.environ.get('SECRET_KEY')
 
 # ── Debug — Render पर False, local पर True ───────────────────────────────
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
@@ -45,7 +57,7 @@ if not DEBUG:
     SESSION_COOKIE_SECURE   = True
     CSRF_COOKIE_SECURE      = True
 
-DEBUG = True
+# DEBUG = True
 
 # Application definition
 
@@ -111,8 +123,9 @@ if _db_url:
     DATABASES = {
         'default': dj_database_url.config(
             default=_db_url,
-            conn_max_age=600,
+            conn_max_age=0,
             conn_health_checks=True,
+            ssl_require=True,
         )
     }
 else:
@@ -250,7 +263,11 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+
+STATICFILES_DIRS = [
+    BASE_DIR / "static",
+]
 
 
 # # लॉगिन के लिए डिफ़ॉल्ट URL
@@ -328,5 +345,6 @@ LOGGING = {
 }
 
 
+
 # अपनी कॉपी की हुई Groq Key यहाँ पेस्ट करें
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")

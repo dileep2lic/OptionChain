@@ -1,6 +1,7 @@
 from django.test import TestCase
 
 import re
+import math
 from django.utils import timezone
 from django.core.cache import caches
 from django.db.models import Q
@@ -75,7 +76,7 @@ def get_master_levels(symbol, selected_date=None):
     if not sr:
         return levels
 
-    def get_rev_val(strike, side, period=1):
+    def get_rev_val(strike, side, period=100):
         today = timezone.now().date()
 
         if selected_date == today:
@@ -106,7 +107,7 @@ def get_master_levels(symbol, selected_date=None):
         total_val, valid_count = 0.0, 0
         for row in rows:
             val = float(row.Reversl_Ce) if side == 'CE' else float(row.Reversl_Pe)
-            if val and val > 0:
+            if val and val > 0 and not math.isinf(val) and not math.isnan(val):
                 total_val  += val
                 valid_count += 1
 
@@ -159,9 +160,11 @@ def get_master_levels(symbol, selected_date=None):
     elif res_type == "WTB"          and sup_type == "SHIFTED WTB"   : eff_res = res_base + step # test ok
     elif res_type == "WTB"          and sup_type == "SHIFTED WTT"   : eff_res = res_base # test ok
     #--------res wtt-------------
-    elif res_type == "WTT"          and sup_type == "WTB"           : eff_res = res_target - step
+    elif res_type == "WTT"          and sup_type == "WTB"           : 
+        eff_res = res_target if (res_target - res_base) <= step else (res_target - step) 
     elif res_type == "WTT"          and sup_type == "WTT"           : eff_res = res_target + step
-    elif res_type == "WTT"          and sup_type == "STRONG"        : eff_res = res_target - step
+    elif res_type == "WTT"          and sup_type == "STRONG"        : #eff_res = res_target - step
+        eff_res = res_target if (res_target - res_base) <= step else (res_target - step) 
     elif res_type == "WTT"          and sup_type == "SHIFTED WTB"   : eff_res = res_target + step
     elif res_type == "WTT"          and sup_type == "SHIFTED WTT"   : eff_res = res_base 
     #--------res strong-------------
@@ -259,7 +262,7 @@ def get_master_levels(symbol, selected_date=None):
     # SUPPORT (CALL Trade के लिए)
     # ==========================================
      # --------sup wtb-------------
-    if sup_type == "WTB"            and res_type == "WTB"           : eff_sup = sup_target - step
+    if sup_type == "WTB"            and res_type == "WTB"           : eff_sup = sup_target 
     elif sup_type == "WTB"          and res_type == "WTT"           : eff_sup = sup_target 
     elif sup_type == "WTB" and res_type == "STRONG":
         eff_sup = sup_target if (sup_base - sup_target) <= step else (sup_target + step) # test ok
@@ -273,7 +276,7 @@ def get_master_levels(symbol, selected_date=None):
     elif sup_type == "WTT"          and res_type == "SHIFTED WTT"   : eff_sup = sup_base - step
     #--------sup strong-------------
     elif sup_type == "STRONG"       and res_type == "WTB"           : eff_sup = sup_base - step # Test ok
-    elif sup_type == "STRONG"       and res_type == "WTT"           : eff_sup = sup_base 
+    elif sup_type == "STRONG"       and res_type == "WTT"           : eff_sup = sup_base - step # test ok
     elif sup_type == "STRONG"       and res_type == "STRONG"        : eff_sup = sup_base - step
     elif sup_type == "STRONG"       and res_type == "SHIFTED WTB"   : eff_sup = sup_base 
     elif sup_type == "STRONG"       and res_type == "SHIFTED WTT"   : eff_sup = sup_base - step

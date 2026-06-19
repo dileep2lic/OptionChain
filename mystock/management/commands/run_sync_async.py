@@ -89,9 +89,9 @@ class Command(BaseCommand):
     # FIXED variables हटा दें, अब हम डायनामिक लाएंगे
     FIXED_SYMOL = "NIFTY" 
     # Trading hours: 9:15 AM to 3:30 PM
-    is_trading_hours = lambda self: dt_time(9, 15) <= datetime.now().time() <= dt_time(15, 30)
+    is_trading_hours = lambda self: dt_time(9, 15, 5) <= datetime.now().time() <= dt_time(15, 30, 5)
     # Bot trading hours: 9:20 AM to 2:45 PM (थोड़ा कम ताकि पेपर ट्रेडिंग के लिए समय रहे)
-    is_trad_hours = lambda self: dt_time(9, 20) <= datetime.now().time() <= dt_time(15, 30)
+    is_trad_hours = lambda self: dt_time(9, 20) <= datetime.now().time() <= dt_time(20, 30)
 
     def handle(self, *args, **options):
         logger.info('🚀 Starting High-Speed Async Engine...') 
@@ -174,6 +174,8 @@ class Command(BaseCommand):
         """NIFTY Loop - Optimized Cleanup before Trading Hours"""
         # 
         last_db_save_time = 0
+        # 🟢 नया: पिछले प्रोसेस किए गए स्पॉट प्राइस को याद रखने के लिए वेरिएबल
+        last_processed_spot_price = None
 
         while True:
             await sync_to_async(close_old_connections)()
@@ -199,6 +201,8 @@ class Command(BaseCommand):
                 # print (df.head(1))  # पहला रिकॉर्ड दिखाएं ताकि पता चले कि डेटा सही से आ रहा है
 
                 if df is not None and not df.empty:
+                    
+                    
                     # 🟢 पूरे डेटा का Totals कैलकुलेट करें
                     nifty_totals = {
                         'total_ce_oi': float(df['CE_OI'].sum() or 0),
@@ -230,6 +234,21 @@ class Command(BaseCommand):
                     await set_cache_async(f'live_nifty_data_{fixes_sym}', live_data_dict, 43200)
                     await set_cache_async(f'live_nifty_spot_{fixes_sym}', spot_price, 43200)
 
+                    # 🚀 === NEW: SPOT PRICE से डुप्लीकेट रोकने का लॉजिक === 🚀
+                    # API से आए नए डेटा का स्पॉट प्राइस निकालें (float में)
+                    current_spot_price = float(df['Spot_Price'].iloc[0])
+                    
+                    # अगर यह स्पॉट प्राइस हमारे पिछले सेव किए गए प्राइस से बिल्कुल मैच करता है, तो इग्नोर करें
+                    if last_processed_spot_price and current_spot_price == last_processed_spot_price:
+                        # print(f"⏭️ [{fixes_sym}] स्पॉट प्राइस ({current_spot_price}) नहीं बदला है। डेटा इग्नोर कर रहे हैं।")
+                        await asyncio.sleep(5) # 5 सेकंड रुककर फिर से API को कॉल करेंगे
+                        continue # नीचे का कोई भी सेविंग कोड नहीं चलेगा, लूप वापस ऊपर चला जाएगा
+                    
+                    # अगर प्राइस बदल गया है (नया टिक है), तो इस नए प्राइस को याद रखने के लिए सेव कर लें
+                    last_processed_spot_price = current_spot_price
+                    # 🚀 ======================================================== 🚀
+                    
+
                     # 🚀 === NEW: WebSockets के ज़रिए फ्रंटएंड को तुरंत सिग्नल भेजें === 🚀
                     channel_layer = get_channel_layer()
                     await channel_layer.group_send(
@@ -237,6 +256,8 @@ class Command(BaseCommand):
                         {
                             "type": "send_data_update",
                             "symbol": fixes_sym,
+                            "spot_price": float(spot_price),               
+                            "data_time": datetime.now().isoformat(),
                             "message": "UPDATE_NOW"
                         }
                     )
@@ -246,7 +267,7 @@ class Command(BaseCommand):
 
                     if self.is_trading_hours():
                         # 👈 2. यहाँ चेक करें कि क्या पिछले DB सेव से 5 सेकंड बीत चुके हैं?
-                        if current_time - last_db_save_time >= 20:
+                        if current_time - last_db_save_time >= 10:
                             entries = [OptionChain(
                                 Time=row.get('Time'),
                                 Symbol=row.get('Symbol'),
@@ -282,21 +303,38 @@ class Command(BaseCommand):
                                 PE_RANGE=row.get('PE_RANGE'),
                                 PE_Delta=row.get('PE_Delta'),
                             ) for _, row in filtered_df.iterrows()]
+
+                            # 🚀 सुरक्षा कवच (Try-Except Block)
+                            try:
+                                await bulk_create_async(entries)
+                            except Exception as db_error:
+                                # अगर DB फुल हो गया या कोई एरर आया, तो बस लॉग में लिखो और आगे बढ़ जाओ
+                                logger.error(f"⚠️ DB Save Error (Ignored): {db_error}")
+                                print(f"⚠️ DB Save Error (Ignored): {db_error}")
+                                pass
                             
-                            await bulk_create_async(entries)
-                            # print(f"⚡ [NIFTY] Processed expiry {expiry} - {len(entries)} entries.")
-                            # 🆕 NEW: सिर्फ NIFTY के लिए हमारी नई टेबल में डेटा सेव करें
-                            await save_live_sr_async(df, fixes_sym)
+                            # await bulk_create_async(entries)
+                            # # print(f"⚡ [NIFTY] Processed expiry {expiry} - {len(entries)} entries.")
+                            # # 🆕 NEW: सिर्फ NIFTY के लिए हमारी नई टेबल में डेटा सेव करें
+                            
+                            last_db_save_time = current_time
+                            
                     else:
                         print("⏸️  NIFTY Loop Outside Trading Hours.")
-                    
-                
+
+                    # 🚀 ✅ FIX: इसे 10 सेकंड की पाबंदी से बाहर निकालें (हर टिक पर चलेगा)
+                    try:
+                        await save_live_sr_async(df, fixes_sym)
+                    except Exception as sr_error:
+                        print(f"⚠️ LiveSRData Save Error: {sr_error}")
+
                     # 🟢 Incremental History Update — FIXED
+                    master_levels = None
                     try:
                         # ✅ FIX Bug 4: master_levels एक बार निकालो
                         master_levels = await sync_to_async(get_master_levels)(fixes_sym)
-                        eff_res = master_levels["R"]["strike"]
-                        eff_sup = master_levels["S"]["strike"]
+                        eff_res = float(master_levels["R"]["strike"] or 0)
+                        eff_sup = float(master_levels["S"]["strike"] or 0)
                         t_str   = datetime.now().isoformat()
 
                         history_key  = f"moving_history_all_{fixes_sym.upper()}"
@@ -310,12 +348,12 @@ class Command(BaseCommand):
                             ce_val = row.get('Reversl_Ce')
                             if ce_val is not None and float(ce_val) > 0:
                                 history_data[s]['ce_hist'].append({"time": t_str, "value": float(ce_val)})
-                                history_data[s]['ce_hist'] = history_data[s]['ce_hist'][-500:]
+                                history_data[s]['ce_hist'] = history_data[s]['ce_hist'][-5:]
 
                             pe_val = row.get('Reversl_Pe')
                             if pe_val is not None and float(pe_val) > 0:
                                 history_data[s]['pe_hist'].append({"time": t_str, "value": float(pe_val)})
-                                history_data[s]['pe_hist'] = history_data[s]['pe_hist'][-500:]
+                                history_data[s]['pe_hist'] = history_data[s]['pe_hist'][-5:]
 
                         # ✅ FIX Bug 3: Strike price नहीं — Reversal VALUE save करो
                         if "master_res" not in history_data: history_data["master_res"] = []
@@ -332,11 +370,11 @@ class Command(BaseCommand):
 
                         if res_val is not None:
                             history_data["master_res"].append({"time": t_str, "value": res_val})
-                            history_data["master_res"] = history_data["master_res"][-500:]
+                            history_data["master_res"] = history_data["master_res"][-50:]
 
                         if sup_val is not None:
                             history_data["master_sup"].append({"time": t_str, "value": sup_val})
-                            history_data["master_sup"] = history_data["master_sup"][-500:]
+                            history_data["master_sup"] = history_data["master_sup"][-50:]
 
                         await set_cache_async(history_key, history_data, 43200)
 
@@ -348,11 +386,14 @@ class Command(BaseCommand):
                     bot_ctrl, _ = await get_control_async(name="bot_loop") # नाम बदल दिया ताकि कन्फ्यूजन न हो
                     if bot_ctrl.is_active:
                         if self.is_trad_hours():  # Bot trading hours check
-                            await sync_to_async(run_live_paper_trading)(
-                                df=df,
-                                symbol=fixes_sym,
-                                master_levels=master_levels, 
-                            )
+                            if master_levels is not None:
+                                await sync_to_async(run_live_paper_trading)(
+                                    df=df,
+                                    symbol=fixes_sym,
+                                    master_levels=master_levels, 
+                                )
+                            else:
+                                print("⚠️ Master levels नहीं मिला, Bot Trading स्किप की गई।")
                         else:
                             print("⏸️ Bot Loop Outside Side Trading Hours., Stop trades.")
                     else:
@@ -368,7 +409,7 @@ class Command(BaseCommand):
                 logger.error(f"NIFTY Loop Error: {e}")
                 
             # 🟢 लूप हमेशा 5 सेकंड आराम करेगा
-            await asyncio.sleep(2)
+            await asyncio.sleep(10)
             
     async def others_sr_loop(self, session, symbols, expiry):
         """Modified Loop: Process 10 symbols, wait 2s, repeat."""

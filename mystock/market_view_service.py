@@ -114,108 +114,108 @@ def _determine_resistance_support(oi_strike, oi_strike_2, vol_strike, vol_strike
 # ── Shifting state-machine handlers ──────────────────────────────────────────
 def handle_strong(prev, strike, status, status_strike, side):
     ps  = prev.get(f'{side}_strike')
-    err = ("Error", prev.get(f'{side}_view'), "ERROR")
+    err = ("Error", prev.get(f'{side}_view'))
 
     if status == "STRONG":
-        if strike > ps: return "Shifted to Top & Became STRONG",  "BULLISH", "SHIFTED WTB TO STRONG"
-        if strike < ps: return "Shifted to Bottom & Became STRONG", "BEARISH", "SHIFTED WTT TO STRONG"
+        if strike > ps: return "Shifted to Top & Became STRONG", "BULLISH"
+        if strike < ps: return "Shifted to Bottom & Became STRONG", "BEARISH"
 
     elif status == "WTT":
         if strike == ps and status_strike > strike:
-            return "Became WTT at New Place", "BULLISH", "WTT"
+            return "Became WTT at New Place", "BULLISH"
         if strike > ps and status_strike > strike:
-            return "Shifted to Top & Became WTT at New Place", "BULLISH", "SHIFTED WTT"
+            return "Shifted to Top & Became WTT at New Place", "BULLISH"
         if strike < ps:
             if status_strike == ps:
-                return f'Shifted to Bottom & Become WTT at Same Strike of Previous {side}', "BEARISH", "SHIFTED WTT"
-            return "Shifted to Bottom & Become WTT at New Place", "BULLISH", "SHIFTED WTT"
+                return f'Shifted to Bottom & Become WTT at Same Strike of Previous {side}', "BEARISH"
+            return "Shifted to Bottom & Become WTT at New Place", "BULLISH"
 
     elif status == "WTB":
         if strike == ps and status_strike < strike:
-            return "Became WTB at New Place", "BEARISH", "WTB"
+            return "Became WTB at New Place", "BEARISH"
         if strike > ps:
             if status_strike == ps:
-                return f'Shifted to Top & Become WTB at Same Strike of Previous {side}', "BULLISH", "SHIFTED WTB"
-            return "Shifted to Top & Become WTB at New Place", "BEARISH", "SHIFTED WTB"
+                return f'Shifted to Top & Become WTB at Same Strike of Previous {side}', "BULLISH"
+            return "Shifted to Top & Become WTB at New Place", "BEARISH"
         if strike < ps and status_strike < strike:
-            return "Shifted to Bottom & Become WTB at New Place", "BEARISH", "SHIFTED WTB"
+            return "Shifted to Bottom & Become WTB at New Place", "BEARISH"
 
     return err
 
 def handle_wtt(prev, strike, status, status_strike, side):
     ps   = prev.get(f'{side}_strike')
     pss  = prev.get(f'{side}_status_strike')
-    err  = ("Error", prev.get(f'{side}_view'), "ERROR")
+    err  = ("Error", prev.get(f'{side}_view'))
 
     if status == "STRONG":
-        if strike == ps: return "Became STRONG at Same Strike", "BEARISH", "STRONG"
+        if strike == ps: return "Became STRONG at Same Strike", "BEARISH"
         if strike > ps:
             return ("Shifted to Top at WTT Strike & Became STRONG" if strike == pss
-                    else "Shifted to Top at New Strike & Became STRONG"), "BULLISH", "SHIFTED WTB TO STRONG"
-        if strike < ps: return "Shifted to Bottom at New Strike & Became STRONG", "BEARISH", "SHIFTED WTT TO STRONG"
+                    else "Shifted to Top at New Strike & Became STRONG"), "BULLISH"
+        if strike < ps: return "Shifted to Bottom at New Strike & Became STRONG", "BEARISH"
 
     elif status == "WTT":
         if strike == ps and status_strike != pss:
-            return "Became WTT at New Place", "BULLISH", "WTT"
+            return "Became WTT at New Place", "BULLISH"
         if strike > ps:
-            if strike == pss:          return "Shifted to Top at WTT & Became WTT at New Place", "BULLISH", "SHIFTED WTT"
-            if status_strike == pss:   return "Shifted to Top at New Place & Became WTT", "BULLISH", "SHIFTED WTT"
-            return "Shifted to Top at New Place & Became WTT at New Place", "BULLISH", "SHIFTED WTT"
+            if strike == pss:          return "Shifted to Top at WTT & Became WTT at New Place", "BULLISH"
+            if status_strike == pss:   return "Shifted to Top at New Place & Became WTT", "BULLISH"
+            return "Shifted to Top at New Place & Became WTT at New Place", "BULLISH"
         if strike < ps:
             if status_strike == ps:
-                return f'Shifted to Bottom at New Place & Became WTT at Same Strike of Previous {side}', "BEARISH", "SHIFTED WTT"
-            if status_strike == pss:   return "Shifted to Bottom at New Place & Became WTT", "BULLISH", "SHIFTED WTT"
-            return "Shifted to Bottom at New Place & Became WTT at New Place", "BULLISH", "SHIFTED WTT"
+                return f'Shifted to Bottom at New Place & Became WTT at Same Strike of Previous {side}', "BEARISH"
+            if status_strike == pss:   return "Shifted to Bottom at New Place & Became WTT", "BULLISH"
+            return "Shifted to Bottom at New Place & Became WTT at New Place", "BULLISH"
 
     elif status == "WTB":
-        if strike == ps: return "Became WTB at New Place", "BEARISH", "WTB"
+        if strike == ps: return "Became WTB at New Place", "BEARISH"
         if strike > ps:
             if strike == pss:
                 if status_strike == ps:
-                    return f'Shifted to Top at WTT & Became WTB at Same Strike of Previous {side}', "BULLISH", "SHIFTED WTB"
-                return "Shifted to Top at WTT & Became WTB at New Place", "BEARISH", "SHIFTED WTB"
+                    return f'Shifted to Top at WTT & Became WTB at Same Strike of Previous {side}', "BULLISH"
+                return "Shifted to Top at WTT & Became WTB at New Place", "BEARISH"
             if status_strike == ps:
-                return f'Shifted to Top at New Place & Became WTB at Same Strike of Previous {side}', "BULLISH", "SHIFTED WTB"
-            return "Shifted to Top at New Place & Became WTB at New Place", "BEARISH", "SHIFTED WTB"
+                return f'Shifted to Top at New Place & Became WTB at Same Strike of Previous {side}', "BULLISH"
+            return "Shifted to Top at New Place & Became WTB at New Place", "BEARISH"
         if strike < ps:
-            return "Shifted to Bottom at New Strike & Became WTB at New Place", "BEARISH", "SHIFTED WTB"
+            return "Shifted to Bottom at New Strike & Became WTB at New Place", "BEARISH"
 
     return err
 
 def handle_wtb(prev, strike, status, status_strike, side):
     ps   = prev.get(f'{side}_strike')
     pss  = prev.get(f'{side}_status_strike')
-    err  = ("Error", prev.get(f'{side}_view'), "ERROR")
+    err  = ("Error", prev.get(f'{side}_view'))
 
     if status == "STRONG":
-        if strike == ps: return "Became STRONG at Same Strike", "BULLISH", "STRONG"
-        if strike > ps:  return "Shifted to Top & Became STRONG", "BULLISH", "SHIFTED WTB TO STRONG"
+        if strike == ps: return "Became STRONG at Same Strike", "BULLISH"
+        if strike > ps:  return "Shifted to Top & Became STRONG", "BULLISH"
         if strike < ps:
-            if strike == pss: return "Shifted to Bottom at WTB & Became STRONG", "BEARISH", "SHIFTED WTT TO STRONG"
-            return "Shifted to Bottom at New Strike & Became STRONG", "BEARISH", "SHIFTED WTT TO STRONG"
+            if strike == pss: return "Shifted to Bottom at WTB & Became STRONG", "BEARISH"
+            return "Shifted to Bottom at New Strike & Became STRONG", "BEARISH"
 
     elif status == "WTB":
         if strike == ps and status_strike != pss:
-            return "Became WTB at New Place", "BEARISH", "WTB"
+            return "Became WTB at New Place", "BEARISH"
         if strike > ps:
             if status_strike == ps:
-                return f'Shifted to Top at New Place & Became WTB at Same Strike of Previous {side}', "BULLISH", "SHIFTED WTB"
-            return "Shifted to Top at New Place & Became WTB at New Place", "BEARISH", "SHIFTED WTB"
+                return f'Shifted to Top at New Place & Became WTB at Same Strike of Previous {side}', "BULLISH"
+            return "Shifted to Top at New Place & Became WTB at New Place", "BEARISH"
         if strike < ps:
-            if strike == pss: return "Shifted to Bottom at WTB & Became WTB at New Place", "BEARISH", "SHIFTED WTB"
-            return "Shifted to Bottom at New Place & Became WTB at New Place", "BEARISH", "SHIFTED WTB"
+            if strike == pss: return "Shifted to Bottom at WTB & Became WTB at New Place", "BEARISH"
+            return "Shifted to Bottom at New Place & Became WTB at New Place", "BEARISH"
 
     elif status == "WTT":
-        if strike == ps: return "Became WTT at New Place", "BULLISH", "WTT"
-        if strike > ps:  return "Shifted to Top at New Place & Became WTT at New Place", "BULLISH", "SHIFTED WTT"
+        if strike == ps: return "Became WTT at New Place", "BULLISH"
+        if strike > ps:  return "Shifted to Top at New Place & Became WTT at New Place", "BULLISH"
         if strike < ps:
             if strike == pss:
                 if status_strike == ps:
-                    return f'Shifted to Bottom at WTB & Became WTT at Same Strike of Previous {side}', "BEARISH", "SHIFTED WTT"
-                return "Shifted to Bottom at WTB & Became WTT at New Place", "BULLISH", "SHIFTED WTT"
+                    return f'Shifted to Bottom at WTB & Became WTT at Same Strike of Previous {side}', "BEARISH"
+                return "Shifted to Bottom at WTB & Became WTT at New Place", "BULLISH"
             if status_strike == ps:
-                return f'Shifted to Bottom at New Place & Became WTT at Same Strike of Previous {side}', "BEARISH", "SHIFTED WTT"
-            return "Shifted to Bottom at New Place & Became WTT at New Place", "BULLISH", "SHIFTED WTT"
+                return f'Shifted to Bottom at New Place & Became WTT at Same Strike of Previous {side}', "BEARISH"
+            return "Shifted to Bottom at New Place & Became WTT at New Place", "BULLISH"
 
     return err
 
@@ -223,11 +223,11 @@ def determine_shifting(prev, strike, status, status_strike, side):
     if (strike == prev.get(f'{side}_strike')
             and status == prev.get(f'{side}_status')
             and status_strike == prev.get(f'{side}_status_strike')):
-        return "Continue", prev.get(f'{side}_view'), "CONTINUE"
+        return "Continue", prev.get(f'{side}_view')
 
     handler = {"STRONG": handle_strong, "WTT": handle_wtt, "WTB": handle_wtb}.get(prev.get(f'{side}_status'))
     return handler(prev, strike, status, status_strike, side) if handler \
-           else ("Error", prev.get(f'{side}_view'), "ERROR")
+           else ("Error", prev.get(f'{side}_view'))
 
 # ── Market view helpers ───────────────────────────────────────────────────────
 def _resolve_final_view(r_view, s_view):
@@ -286,19 +286,17 @@ def relative_market_view(symbol, expiry_date, current_timestamp,
     view_map = {"WTT": "BULLISH", "WTB": "BEARISH"}
 
     if prev:
-        res_shift, res_view, res_status_tag = determine_shifting(prev, r_strike, r_status, r_status_strike, "resistance")
-        sup_shift, sup_view, sup_status_tag = determine_shifting(prev, s_strike, s_status, s_status_strike, "support")
+        res_shift, res_view = determine_shifting(prev, r_strike, r_status, r_status_strike, "resistance")
+        sup_shift, sup_view = determine_shifting(prev, s_strike, s_status, s_status_strike, "support")
         res_view = {"BULLISH": "BULLISH", "BEARISH": "BEARISH"}.get(res_view, "STRONG")
         sup_view = {"BULLISH": "BULLISH", "BEARISH": "BEARISH"}.get(sup_view, "STRONG")
     else:
-        res_shift      = f'Initially Resistance is {r_status}'
-        sup_shift      = f'Initially Support is {s_status}'
-        res_view       = view_map.get(r_status, "STRONG")
-        sup_view       = view_map.get(s_status, "STRONG")
-        res_status_tag = r_status   # WTT / WTB / STRONG directly on first tick
-        sup_status_tag = s_status
+        res_shift = f'Initially Resistance is {r_status}'
+        sup_shift = f'Initially Support is {s_status}'
+        res_view  = view_map.get(r_status, "STRONG")
+        sup_view  = view_map.get(s_status, "STRONG")
 
-    return res_shift, res_view, sup_shift, sup_view, _resolve_final_view(res_view, sup_view), res_status_tag, sup_status_tag
+    return res_shift, res_view, sup_shift, sup_view, _resolve_final_view(res_view, sup_view)
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 def process_market_view(symbol, underlying_key, expiry_date, oc_data, spot):
@@ -369,7 +367,7 @@ def process_market_view(symbol, underlying_key, expiry_date, oc_data, spot):
     pe_vol_at = s_pe_vol['strikePrice'] if s_pe_vol is not None else None
 
     # Relative market view
-    res_shift, res_view, sup_shift, sup_view, final_view, res_status_tag, sup_status_tag = relative_market_view(
+    res_shift, res_view, sup_shift, sup_view, final_view = relative_market_view(
         symbol, expiry_date, current_timestamp,
         r_strike, r_status, r_status_strike,
         s_strike, s_status, s_status_strike)
@@ -587,10 +585,6 @@ def process_market_view(symbol, underlying_key, expiry_date, oc_data, spot):
         support_view=sup_view,         
         final_view=final_view,
         scenario_no=scenario_no,
-
-        # ── Simplified status tags (WTT/WTB/STRONG/SHIFTED WTT/SHIFTED WTB/SHIFTED WTB TO STRONG/SHIFTED WTT TO STRONG)
-        resistance_status_tag=res_status_tag,
-        support_status_tag=sup_status_tag,
 
         risky_top_strike=risky_top,       
         safe_top_strike=safe_top,

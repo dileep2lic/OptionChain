@@ -5,17 +5,17 @@ stock_sync/
 *~
 __pycache__/
 
-# Local Database (लोकल डेटाबेस को कभी अपलोड न करें)
+# Local Database
 db.sqlite3
 db.sqlite3-journal
 
-# Environments (वर्चुअल एनवायरनमेंट)
+# Environments
 .env
-.venv
-env/
+.myvenv
+myvenv/
 venv/
 ENV/
-
+call aap/
 # Django Media / Static Files (यूजर द्वारा अपलोड की गई फाइलें)
 media/
 # static/ (अगर आप डेवलपमेंट के दौरान स्टैटिक फाइल्स को इग्नोर करना चाहते हैं, 
@@ -24,6 +24,7 @@ staticfiles/
 
 # Security / Secrets (आपके प्रोजेक्ट के सीक्रेट्स)
 .env
+**/.env
 local_settings.py
 secrets.json
 credentials1.py
@@ -41,6 +42,17 @@ mystock/fetch_access_token_auto.py
 mystock/views1.py
 templates/dashboard.html
 templates/sr.html
+
+db.sqlite3
+.gitignore
+clean_option_chain.csv
+
+mystock/templates/trade_logic.py
+mystock/templates/trade_logic1.py
+mystock/templates/voice_commands.html
+mystock/tests.py
+Opchain.bat
+logs/stock_sync.log
 db.sqlite3-shm
+logs/stock_sync.log
 db.sqlite3-wal
-Opchain.zip

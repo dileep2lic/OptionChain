@@ -18,3 +18,4 @@ for name in ['nifty_loop','others_loop','bot_loop']:
     c,_ = SyncControl.objects.get_or_create(name=name, defaults={'is_active':True})
 print('SyncControl records ready.')
 "
+# pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate
