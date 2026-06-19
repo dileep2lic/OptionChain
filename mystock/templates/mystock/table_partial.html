@@ -1,0 +1,201 @@
+<style>
+    /* ===== Footer Styling ===== */
+    .table-footer { background: #222; color: #fff; font-weight: bold; font-size: 1.05em; }
+    .footer-cell { padding: 10px; }
+    .total-pos { color: #00e676; }
+    .total-neg { color: #ff4d4d; }
+</style>
+
+<input type="hidden" id="hidden-latest-time" value="{{ latest_time|date:'H:i:s' }}">
+<input type="hidden" id="hidden-spot-price" value="{{ spot|floatformat:2 }}">
+<input type="hidden" id="hidden-lot-size" value="{{ Lot_size }}">
+
+<input type="hidden" id="hidden-res-strike" value="{{ sr_data.resistance_strike|floatformat:0 }}">
+<input type="hidden" id="hidden-res-status" value="{{ sr_data.resistance_status }}">
+<input type="hidden" id="hidden-sup-strike" value="{{ sr_data.supprt_strike|floatformat:0 }}">
+<input type="hidden" id="hidden-sup-status" value="{{ sr_data.supprt_status }}">
+<input type="hidden" id="hidden-expiry-date" value="{{ expiry_date|date:'d-M' }}">
+
+<table>
+    <thead>
+        <tr>
+            <th id="ce-header" colspan="{% if is_search_dashboard %}7{% else %}8{% endif %}" style="background:#003d14;">
+                <span class="label sr-label-res">Resistance (CE) ↗</span><br>
+            <span id="header-res" class="value" style="color: var(--accent-green); font-size: 14px;">
+                {{ sr_data.resistance_strike|floatformat:0|default:"-" }} 
+                <span style="font-size: 12px; opacity: 0.9; font-weight: normal;">[{{ sr_data.resistance_status|default:"Waiting..." }}]</span>
+            </span>
+            </th>
+            <th class="col-strike" style="background:#000033;">STRIKE</th>
+            <th id="pe-header" colspan="{% if is_search_dashboard %}7{% else %}8{% endif %}" style="background:#5c0101;">
+                <span class="label sr-label-sup">Support (PE) ↗</span><br>
+            <span id="header-sup" class="value" style="color: var(--accent-red); font-size: 14px;">
+                {{ sr_data.supprt_strike|floatformat:0|default:"-" }} 
+                <span style="font-size: 12px; opacity: 0.9; font-weight: normal;">[{{ sr_data.supprt_status|default:"Waiting..." }}]</span>
+            </span>
+            </th>
+        </tr>
+        <tr>
+            <th class="col-iv">IV(Δ)</th>
+            <th class="col-range">Range</th>
+            <th class="col-chg-oi">CHG OI</th>
+            <th class="col-oi">OI</th>
+            {% if not is_search_dashboard %}<th class="col-vol-chg">VOL CHG</th>{% endif %}
+            <th class="col-vol">VOL</th>
+            <th class="col-ltp">LTP</th>
+            <th class="col-reversl">REVERSL</th>
+            
+            <th class="col-strike">PRICE</th>
+            
+            <th class="col-reversl">REVERSL</th>
+            <th class="col-ltp">LTP</th>
+            <th class="col-vol">VOL</th>
+            {% if not is_search_dashboard %}<th class="col-vol-chg">VOL CHG</th>{% endif %}
+            <th class="col-oi">OI</th>
+            <th class="col-chg-oi">CHG OI</th>
+            <th class="col-range">Range</th>
+            <th class="col-iv">IV(Δ)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in data %}
+        <tr class="{% if row.is_spot_divider %}spot-line-row{% endif %}">
+            <td class="col-iv {% if row.Strike_Price < spot %}itm-bg{% else %}otm-bg{% endif %}">
+                {{ row.CE_IV|floatformat:1 }}<br><span class="pct-text">({{ row.CE_Delta|floatformat:2 }})</span>
+            </td>
+            <td class="col-range {% if row.Strike_Price < spot %}itm-bg{% else %}otm-bg{% endif %}">
+                {{ row.CE_RANGE|floatformat:1 }}
+            </td>
+            
+            <td class="col-chg-oi {% if row.CE_COI > 0 %}pos-val{% else %}neg-val{% endif %} {{ row.CE_COI_class }} {% if row.Strike_Price < spot %}itm-bg{% else %}otm-bg{% endif %}">
+                <a href="javascript:void(0)" onclick="openChart('{{ row.Symbol }}', '{{ row.Strike_Price }}', 'coi')" style="color: inherit; text-decoration: underline; text-decoration-style: dotted;">
+                    {{ row.CE_COI|floatformat:0 }}
+                </a>
+                <span class="pct-text">({{ row.CE_COI_percent|floatformat:1 }} %)</span>
+            </td>
+
+            <td class="col-oi {{ row.CE_OI_class }} {% if row.Strike_Price < spot %}itm-bg{% else %}otm-bg{% endif %} white-text">
+                <a href="javascript:void(0)" onclick="openChart('{{ row.Symbol }}', '{{ row.Strike_Price }}', 'oi')" style="color: inherit; text-decoration: underline; text-decoration-style: dotted;">
+                    {{ row.CE_OI|floatformat:0 }}
+                </a>
+                <span class="pct-text">({{ row.CE_OI_percent|floatformat:1 }} %)</span>
+            </td>
+
+            {% if not is_search_dashboard %}
+            <td class="col-vol-chg {{ row.ce_vol_1h_chg_class }} {% if row.Strike_Price < spot %}itm-bg{% else %}otm-bg{% endif %} white-text">
+                {{ row.ce_vol_1h_chg|default:0|floatformat:0 }}
+                <span class="pct-text">({{ row.ce_vol_1h_chg_pct|default:0|floatformat:1 }} %)</span>
+            </td>
+            {% endif %}
+
+            <td class="col-vol {{ row.CE_Volume_class }} {% if row.Strike_Price < spot %}itm-bg{% else %}otm-bg{% endif %} white-text">
+                {{ row.CE_Volume|floatformat:0 }}
+                <span class="pct-text">({{ row.CE_Volume_percent|floatformat:1 }} %)</span>
+            </td>
+
+            <td class="col-ltp {% if row.Strike_Price < spot %}itm-bg{% else %}otm-bg{% endif %} white-text">
+                <div style="position: relative; width: 100%; display: inline-block;">
+                    <a href="javascript:void(0)" onclick="openLtpCalculator('CE', '{{ row.CE_LTP|default:0 }}', '{{ row.CE_Delta|default:0 }}', '{{ spot|default:0 }}')" style="color: inherit; text-decoration: underline; text-decoration-style: dotted;">
+                        <strong>{{ row.CE_LTP }}</strong>
+                    </a>
+                    <span class="pct-text {% if row.CE_CLTP >= 0 %}pos-val{% else %}neg-val{% endif %}">
+
+                        ({{ row.CE_CLTP|floatformat:1 }})
+                    </span>
+                </div>
+            </td>
+
+            <td class="col-reversl rev-val {% if row.Reversl_Ce < spot %}breakout{% endif %}">
+                {% if row.Reversl_Ce < spot %}Breakout{% else %}{{ row.Reversl_Ce |floatformat:2 }}{% endif %}
+            </td>
+
+            <td class="col-strike strike">
+                {% if row.is_spot_divider %}<span class="spot-label">{{ spot }}</span>{% endif %}
+                <a href="javascript:void(0)" onclick="openChart('{{ row.Symbol }}', '{{ row.Strike_Price }}', 'ltp')" style="color: inherit; text-decoration: underline; text-decoration-style: dotted;">
+                    {{ row.Strike_Price|floatformat:0 }}
+                </a>
+                
+            </td>
+
+            <td class="col-reversl rev-val {% if row.Reversl_Pe > spot %}breakdown{% endif %}">
+                {% if row.Reversl_Pe > spot %}Breakdown{% else %}{{ row.Reversl_Pe |floatformat:2 }}{% endif %}
+            </td>
+
+            <td class="col-ltp {% if row.Strike_Price > spot %}itm-bg{% else %}otm-bg{% endif %} white-text">
+                <div style="position: relative; width: 100%; display: inline-block;">
+                    <a href="javascript:void(0)" onclick="openLtpCalculator('PE', '{{ row.PE_LTP|default:0 }}', '{{ row.PE_Delta|default:0 }}', '{{ spot|default:0 }}')" style="color: inherit; text-decoration: underline; text-decoration-style: dotted;">
+                        <strong>{{ row.PE_LTP }}</strong>
+                    </a>
+                    <span class="pct-text {% if row.PE_CLTP >= 0 %}pos-val{% else %}neg-val{% endif %}">
+                        ({{ row.PE_CLTP|floatformat:1 }})
+                    </span>
+                </div>
+            </td>
+
+            <td class="col-vol {{ row.PE_Volume_class }} {% if row.Strike_Price > spot %}itm-bg{% else %}otm-bg{% endif %} white-text">
+                {{ row.PE_Volume|floatformat:0 }}
+                <span class="pct-text">({{ row.PE_Volume_percent|floatformat:1 }} %)</span>
+            </td>
+
+            {% if not is_search_dashboard %}
+            <td class="col-vol-chg {{ row.pe_vol_1h_chg_class }} {% if row.Strike_Price > spot %}itm-bg{% else %}otm-bg{% endif %} white-text">
+                {{ row.pe_vol_1h_chg|default:0|floatformat:0 }}
+                <span class="pct-text">({{ row.pe_vol_1h_chg_pct|default:0|floatformat:1 }} %)</span>
+            </td>
+            {% endif %}
+        
+            <td class="col-oi {{ row.PE_OI_class }} {% if row.Strike_Price > spot %}itm-bg{% else %}otm-bg{% endif %} white-text">
+                <a href="javascript:void(0)" onclick="openChart('{{ row.Symbol }}', '{{ row.Strike_Price }}', 'oi')" style="color: inherit; text-decoration: underline; text-decoration-style: dotted;">
+                    {{ row.PE_OI|floatformat:0 }}
+                </a>
+                <span class="pct-text">({{ row.PE_OI_percent|floatformat:1 }} %)</span>
+            </td>
+
+            <td class="col-chg-oi {% if row.PE_COI > 0 %}pos-val{% else %}neg-val{% endif %} {{ row.PE_COI_class }} {% if row.Strike_Price > spot %}itm-bg{% else %}otm-bg{% endif %}">
+                <a href="javascript:void(0)" onclick="openChart('{{ row.Symbol }}', '{{ row.Strike_Price }}', 'coi')" style="color: inherit; text-decoration: underline; text-decoration-style: dotted;"> 
+                    {{ row.PE_COI|floatformat:0 }}
+                </a>
+                <span class="pct-text">({{ row.PE_COI_percent|floatformat:1 }} %)</span>
+            </td>
+            <td class="col-range {% if row.Strike_Price > spot %}itm-bg{% else %}otm-bg{% endif %}">
+                {{ row.PE_RANGE|floatformat:1 }}
+            </td>
+
+            <td class="col-iv {% if row.Strike_Price > spot %}itm-bg{% else %}otm-bg{% endif %}">
+                {{ row.PE_IV|floatformat:1 }}<br><span class="pct-text">({{ row.PE_Delta|floatformat:2 }})</span>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="17">Waiting for live data...</td></tr>
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr class="table-footer">
+            <td class="col-iv footer-cell"></td>
+            <td class="col-range footer-cell" style="text-align: right; padding-right: 10px;">Total</td>
+            <td class="col-chg-oi footer-cell {% if total_ce_coi < 0 %}total-neg{% else %}total-pos{% endif %}">
+                {{ total_ce_coi|default:0|floatformat:0 }}
+            </td>
+            <td class="col-oi footer-cell">{{ total_ce_oi|default:0|floatformat:0 }}</td>
+            
+            {% if not is_search_dashboard %}<td class="col-vol-chg footer-cell"></td>{% endif %}
+            <td class="col-vol footer-cell"></td>
+            <td class="col-ltp footer-cell"></td>
+            <td class="col-reversl footer-cell"></td>
+            
+            <td class="col-strike footer-cell"></td>
+            
+            <td class="col-reversl footer-cell"></td>
+            <td class="col-ltp footer-cell"></td>
+            <td class="col-vol footer-cell"></td>
+            {% if not is_search_dashboard %}<td class="col-vol-chg footer-cell"></td>{% endif %}
+            
+            <td class="col-oi footer-cell">{{ total_pe_oi|default:0|floatformat:0 }}</td>
+            <td class="col-chg-oi footer-cell {% if total_pe_coi < 0 %}total-neg{% else %}total-pos{% endif %}">
+                {{ total_pe_coi|default:0|floatformat:0 }}
+            </td>
+            <td class="col-range footer-cell"></td>
+            <td class="col-iv footer-cell"></td>
+        </tr>
+    </tfoot>
+</table>

@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard Integrated Chart</title>
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+
+  <style>
+    :root { --bg: #0d1117; --surface: #161b22; --border: #30363d; --accent: #58a6ff; --green: #3fb950; --red: #f85149; --text: #e6edf3; --muted: #8b949e; --font: 'Inter', sans-serif; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    .controls-bar { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 8px 15px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .symbol-title { font-weight: bold; color: var(--accent); font-size: 15px; }
+    .controls-right { display: flex; gap: 8px; align-items: center; }
+    
+    select, button { background: var(--bg); border: 1px solid var(--border); color: var(--text); font-size: 12px; padding: 4px 8px; border-radius: 4px; cursor: pointer; outline: none; transition: 0.2s;}
+    button:hover { opacity: 0.8; }
+    .btn-active { border-color: var(--green); color: var(--green); background: #3fb95011; }
+    
+    #loading, #message { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(0,0,0,0.8); padding: 5px 15px; border-radius: 20px; font-size: 12px; display: none; }
+    #message { color: var(--red); }
+    #countdown-bar { flex-shrink: 0; height: 2px; width: 100%; background: var(--border); display: none; }
+    #countdown-fill { height: 100%; background: var(--green); width: 100%; transition: width linear; }
+
+    html, body { 
+        background: var(--bg); 
+        color: var(--text); 
+        font-family: var(--font); 
+        overflow: hidden !important;
+        margin: 0; 
+        padding: 0;
+        height: 100%; 
+        width: 100%;
+        display: flex; 
+        flex-direction: column; 
+    }
+    #chart-wrap { position: relative; width: 100%; flex-grow: 1; overflow: hidden; }
+    #chart { position: absolute; width: 100%; height: 100%; top: 0; left: 0; }
+    #ohlc-legend {
+        position: absolute;
+        top: 10px;
+        left: 12px;
+        z-index: 20;
+        font-size: 13px;
+        font-family: var(--font);
+        background: rgba(22, 27, 34, 0.6);
+        padding: 4px 10px;
+        border-radius: 4px;
+        pointer-events: none;
+        display: none;
+        border: 1px solid var(--border);
+    }
+    .ohlc-lbl { color: var(--muted); font-size: 11px; margin-left: 6px;}
+    .ohlc-val { font-weight: bold; margin-right: 4px; }
+
+    /* ─── TOAST NOTIFICATION ─── */
+    #toast-container {
+      position: fixed; bottom: 20px; right: 20px;
+      z-index: 9999; display: flex; flex-direction: column; gap: 10px;
+    }
+    .toast {
+      background: var(--surface);
+      border-left: 4px solid var(--accent);
+      color: #fff; padding: 12px 20px; border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      font-family: var(--font); font-size: 13px;
+      animation: slideIn 0.3s ease-out forwards;
+    }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  </style>
+</head>
+<body>
+
+<input type="hidden" id="ctrl-symbol" value="{{ symbol }}">
+<input type="hidden" id="ctrl-from" value="{{ from_date }}">
+<input type="hidden" id="ctrl-to" value="{{ to_date }}">
+<input type="hidden" id="refresh-interval" value="60"> 
+
+<div class="controls-bar">
+    <div class="symbol-title">{{ symbol }}</div>
+	
+	  <div style="display: flex; align-items: center; gap: 10px; margin-left: 10px; font-family: var(--font);">
+        <span id="tp-close" style="font-weight: bold; font-size: 15px; color: #fff;">—</span>
+        <span id="tp-change" style="font-size: 11px; font-weight: 600;">—</span>
+    </div>
+
+    <div class="controls-right">
+        <select id="ctrl-unit" onchange="updateIntervalOptions(); loadChart();">
+            <option value="minutes" {% if unit == "minutes" or not unit %}selected{% endif %}>Min</option>
+            <option value="hours" {% if unit == "hours" %}selected{% endif %}>Hour</option>
+            <option value="days" {% if unit == "days" %}selected{% endif %}>Day</option>
+        </select>
+        
+        <select id="ctrl-interval" onchange="loadChart();">
+            <option value="{{ interval|default:'5' }}" selected>{{ interval|default:'5' }}</option>
+        </select>
+        
+        <button id="auto-refresh-btn" onclick="toggleAutoRefresh()" title="Auto Refresh">
+            <span id="ar-icon">⏸</span> Auto
+        </button>
+        
+        <button id="reversal-toggle-btn" class="btn-active" onclick="toggleReversalLines()" title="Toggle Reversal Lines">
+            <span id="rv-label">➖ Rev: ON</span>
+        </button>
+
+        <button id="alert-toggle-btn" onclick="toggleAlerts()" title="Toggle Sound Alerts">
+            <span id="alert-label">🔕 Alerts OFF</span>
+        </button>
+    </div>
+</div>
+
+<div id="countdown-bar"><div id="countdown-fill"></div></div>
+
+<div id="chart-wrap">
+  <div id="loading">⏳ Loading...</div>
+  <div id="message"></div>
+  <div id="ohlc-legend"></div>
+  <div id="chart"></div>
+</div>
+
+<script>
+  let mainChart = null;
+  let reversalMode = 1; // 1 = ON (Straight), 0 = OFF
+  let savedRange = null;
+  let lastCandles = [];
+  let lastReversals = [];
+  let candleSeries = null;          // <--- नया (चार्ट डेटा को अपडेट रखने के लिए)
+  let currentChartSettings = "";    // <--- नया (सिंबल या टाइमफ्रेम बदलने को ट्रैक करने के लिए)
+  let currentBar = null;           // <--- नया (लाइव कैंडल को ट्रैक करने के लिए)
+ 
+  // ══════════════════════════════════════════════════════
+  //  SOUND ALERTS & NOTIFICATIONS LOGIC
+  // ══════════════════════════════════════════════════════
+  let alertsEnabled = false;
+  let previousSpotPrice = null;
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  function toggleAlerts() {
+    alertsEnabled = !alertsEnabled;
+    const btn = document.getElementById('alert-toggle-btn');
+    btn.classList.toggle('btn-active', alertsEnabled);
+    
+    if (alertsEnabled) {
+      document.getElementById('alert-label').textContent = '🔔 Alerts ON';
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      showToast("✅ Sound Alerts Activated!");
+    } else {
+      document.getElementById('alert-label').textContent = '🔕 Alerts OFF';
+    }
+  }
+
+  function updateTopbar(candles) {
+    if (!candles || !candles.length) return;
+    const last   = candles[candles.length - 1];
+    const first  = candles[0];
+    const change = last.close - first.open;
+    const pct    = ((change / first.open) * 100).toFixed(2);
+    const isUp   = change >= 0;
+    const sign   = isUp ? '+' : '';
+
+    document.getElementById('tp-close').textContent = last.close.toFixed(2);
+    const chEl = document.getElementById('tp-change');
+    chEl.textContent = `${sign}${change.toFixed(2)} (${sign}${pct}%)`;
+    chEl.style.color = isUp ? 'var(--green)' : 'var(--red)';
+  }
+
+  function playBeep() {
+    if (!alertsEnabled) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime); 
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);     
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.4); 
+  }
+  
+// 2.5 कंप्यूटर से बोलकर बताने वाला फंक्शन (Text-to-Speech)
+function speakAlert(text) {
+  if (!alertsEnabled || !('speechSynthesis' in window)) return;
+  
+  // अगर पहले से कुछ बोल रहा है, तो उसे रोक दें ताकि आवाज़ मिक्स न हो
+  window.speechSynthesis.cancel(); 
+  
+  const msg = new SpeechSynthesisUtterance(text);
+  
+  // आप चाहें तो 'en-IN' (Indian English) या 'hi-IN' (Hindi) सेट कर सकते हैं
+  msg.lang = 'hi-IN'; 
+  msg.rate = 1.0; // बोलने की स्पीड (1 normal है, 1.2 थोड़ा तेज़ है)
+  msg.pitch = 1.0; // आवाज़ का भारीपन
+  
+  window.speechSynthesis.speak(msg);
+}
+	
+  function showToast(msg) {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'toast-container';
+      document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = msg;
+    container.appendChild(toast);
+    
+    setTimeout(() => toast.remove(), 5000); 
+  }
+
+  // 4. प्राइस क्रॉस चेक करने का फंक्शन
+function checkReversalAlerts(currentPrice, reversals) {
+  if (!alertsEnabled || !reversals || reversals.length === 0) return;
+
+  if (previousSpotPrice !== null) {
+    reversals.forEach(rev => {
+      const linePrice = parseFloat(rev.price);
+      if (linePrice > 0) {
+        const crossedUp   = previousSpotPrice < linePrice && currentPrice >= linePrice;
+        const crossedDown = previousSpotPrice > linePrice && currentPrice <= linePrice;
+
+        if (crossedUp || crossedDown) {
+          playBeep(); // पहले बीप बजेगी
+          
+          const direction = crossedUp ? "Crossed UP" : "Crossed DOWN";
+          const levelName = rev.label || 'Level';
+          
+          // बोलने के लिए मैसेज तैयार करें
+          // const spokenMessage = `Alert. Price ${direction}, ${levelName}, at ${linePrice}`;
+          // 🗣️ बोलने के लिए शुद्ध हिंदी मैसेज
+          const spokenMessage = `अलर्ट! प्राइस ने स्ट्राइक ${levelName} को, ${linePrice} पर ${direction} किया है।`;
+          
+          // 💻 स्क्रीन पर इंग्लिश में ही दिखने दें (पढ़ने में आसान रहता है)
+          showToast(`🚨 ALERT: Price ${crossedUp ? 'Crossed UP' : 'Crossed DOWN'} ${levelName} at ${linePrice}`);
+          
+          showToast(`🚨 ${spokenMessage}`);
+          
+          // 👇 कंप्यूटर को बोलने का कमांड दें 👇
+          speakAlert(spokenMessage);
+        }
+      }
+    });
+  }
+  previousSpotPrice = currentPrice;
+}
+  // ══════════════════════════════════════════════════════
+
+  // ── OHLC Hover Update Function ──
+  function updateLegend(data) {
+      const legend = document.getElementById('ohlc-legend');
+      if (!legend) return;
+      const isUp = data.close >= data.open;
+      const color = isUp ? 'var(--green)' : 'var(--red)';
+      legend.innerHTML = `
+          <span class="ohlc-lbl">O</span> <span class="ohlc-val" style="color:${color}">${data.open.toFixed(2)}</span>
+          <span class="ohlc-lbl">H</span> <span class="ohlc-val" style="color:var(--green)">${data.high.toFixed(2)}</span>
+          <span class="ohlc-lbl">L</span> <span class="ohlc-val" style="color:var(--red)">${data.low.toFixed(2)}</span>
+          <span class="ohlc-lbl">C</span> <span class="ohlc-val" style="color:${color}">${data.close.toFixed(2)}</span>
+      `;
+      legend.style.display = 'block';
+  }
+
+  function buildCharts(candles, reversals = []) {
+      lastCandles = candles;
+      lastReversals = reversals;
+      const chartContainer = document.getElementById("chart");
+
+      if (!candles || candles.length === 0) { 
+          document.getElementById("message").style.display = "block"; 
+          document.getElementById("message").innerText = "No Data Available"; 
+          return; 
+      }
+      document.getElementById("message").style.display = "none";
+
+      // मौजूदा सिंबल और टाइमफ्रेम को चेक करें
+      const sym = document.getElementById("ctrl-symbol").value || "default";
+      const intv = document.getElementById("ctrl-interval").value || "5";
+      const chartSettingsKey = `${sym}_${intv}`;
+      const zoomStorageKey = `chart_zoom_${chartSettingsKey}`;
+
+      // 1. अगर सिंबल या टाइमफ्रेम बदला है, तो ही पुराने चार्ट को डिलीट करें
+      if (mainChart && currentChartSettings !== chartSettingsKey) {
+          mainChart.remove();
+          mainChart = null;
+          candleSeries = null;
+      }
+      currentChartSettings = chartSettingsKey;
+
+      // 2. डेटा को टाइमस्टैम्प में बदलें
+      const IST_OFFSET = 19800;
+      let cdData = [];
+      let seenTimes = new Set();
+      
+      candles.forEach(c => {
+          let t = Math.floor(new Date(c.time).getTime() / 1000) + IST_OFFSET;
+          if (!seenTimes.has(t)) {
+              seenTimes.add(t);
+              cdData.push({ time: t, open: c.open, high: c.high, low: c.low, close: c.close });
+          }
+      });
+      cdData.sort((a, b) => a.time - b.time);
+
+      // 3. अगर चार्ट नहीं है (यानी पेज रिफ्रेश हुआ है), तो नया चार्ट बनाएँ
+      if (!mainChart) {
+          chartContainer.innerHTML = "";
+          const cWidth = chartContainer.clientWidth || window.innerWidth || 800;
+          const cHeight = chartContainer.clientHeight || window.innerHeight || 400;
+
+          mainChart = LightweightCharts.createChart(chartContainer, {
+              width: cWidth, height: cHeight,
+              layout: { background: { color: "#0d1117" }, textColor: "#8b949e" },
+              grid: { vertLines: { color: "#21262d" }, horzLines: { color: "#21262d" } },
+              crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+              rightPriceScale: { borderColor: "#30363d" },
+              timeScale: { borderColor: "#30363d", timeVisible: true },
+          });
+
+          candleSeries = mainChart.addCandlestickSeries({ 
+              upColor: "#3fb950", downColor: "#f85149", 
+              borderUpColor: "#3fb950", borderDownColor: "#f85149", 
+              wickUpColor: "#3fb950", wickDownColor: "#f85149",
+          });
+
+          new ResizeObserver(entries => {
+              if(entries.length === 0 || !mainChart) return;
+              const newRect = entries[0].contentRect;
+              if(newRect.width > 0 && newRect.height > 0) {
+                  mainChart.applyOptions({ width: newRect.width, height: newRect.height });
+              }
+          }).observe(chartContainer);
+
+          mainChart.subscribeCrosshairMove(param => {
+              if (param.time) {
+                  const data = param.seriesData.get(candleSeries);
+                  if (data) { updateLegend(data); }
+              }
+          });
+
+          // --- ज़ूम को रीस्टोर और सेव करने का लॉजिक ---
+          const savedTimeRangeStr = localStorage.getItem(zoomStorageKey);
+          setTimeout(() => {
+              if (savedTimeRangeStr) {
+                  try {
+                      const savedTimeRange = JSON.parse(savedTimeRangeStr);
+                      mainChart.timeScale().setVisibleRange(savedTimeRange);
+                  } catch (e) {
+                      mainChart.timeScale().fitContent();
+                  }
+              } else {
+                  mainChart.timeScale().fitContent();
+              }
+          }, 50);
+
+          mainChart.timeScale().subscribeVisibleTimeRangeChange(range => { 
+              if (range) {
+                  localStorage.setItem(zoomStorageKey, JSON.stringify(range));
+              }
+          });
+      } // -- नया चार्ट बनाने का काम खत्म --
+
+      // 4. ऑटो रिफ्रेश होने पर: सिर्फ डेटा अपडेट करें (चार्ट डिलीट किए बिना)
+      if (candleSeries) {
+          candleSeries.setData(cdData); // <--- यही लाइन ज़ूम को टूटने नहीं देगी
+      }
+      // 👇 यहाँ से यह नया कोड जोड़ें 👇
+      if (cdData.length > 0) {
+          const last = cdData[cdData.length - 1];
+          currentBar = {
+              time: last.time,
+              open: last.open,
+              high: last.high,
+              low: last.low,
+              close: last.close
+          };
+          updateLegend(last);
+          checkReversalAlerts(last.close, reversals);
+      }
+
+      if (cdData.length > 0) {
+          updateLegend(cdData[cdData.length - 1]);
+          checkReversalAlerts(cdData[cdData.length - 1].close, reversals);
+      }
+
+      // 5. Reversal Lines (Straight Lines) अपडेट करें
+      if (window._reversalSeries) {
+          window._reversalSeries.forEach(s => { try { mainChart.removeSeries(s); } catch(e){} });
+      }
+      window._reversalSeries = [];
+
+      if (reversalMode === 1) {
+          const validReversals = reversals.filter(r => r && r.price > 0);
+          validReversals.forEach(rev => {
+              try {
+                  const ls = mainChart.addLineSeries({ 
+                      color: rev.color, lineWidth: rev.width || 1, lineStyle: rev.dash || 0, 
+                      priceLineVisible: false, lastValueVisible: true, title: rev.label || '' 
+                  });
+                  const lineData = cdData.map(c => ({ time: c.time, value: Number(rev.price) }));
+                  if (lineData.length > 0) { ls.setData(lineData); }
+                  window._reversalSeries.push(ls);
+              } catch (e) {
+                  console.warn("Reversal line error:", e.message);
+              }
+          });
+      }
+  }
+
+  function toggleReversalLines() {
+      reversalMode = reversalMode === 1 ? 0 : 1; 
+      const btn = document.getElementById("reversal-toggle-btn");
+      const label = document.getElementById("rv-label");
+      
+      if (reversalMode === 1) {
+          btn.classList.add("btn-active");
+          btn.style.borderColor = "var(--accent)";
+          btn.style.color = "var(--accent)";
+          label.innerText = "➖ Rev: ON";
+      } else {
+          btn.classList.remove("btn-active");
+          btn.style.borderColor = "var(--border)";
+          btn.style.color = "var(--text)";
+          label.innerText = "🚫 Rev: OFF";
+      }
+      buildCharts(lastCandles, lastReversals);
+  }
+
+  function loadChart() {
+    const sym = document.getElementById("ctrl-symbol").value, 
+          unit = document.getElementById("ctrl-unit").value, 
+          intv = document.getElementById("ctrl-interval").value, 
+          frm = document.getElementById("ctrl-from").value, 
+          to = document.getElementById("ctrl-to").value;
+          
+    document.getElementById("loading").style.display = "block";
+    
+    fetch(`/api/candle/?symbol=${sym}&unit=${unit}&interval=${intv}&from_date=${frm}&to_date=${to}`)
+      .then(r => r.json())
+      .then(d => {
+          document.getElementById("loading").style.display = "none";
+          if (!d.error) { 
+              let incomingReversals = (d.reversal_lines||[]).filter(r=>r.price>0); 
+              buildCharts(d.candles, incomingReversals); 
+              updateTopbar(d.candles);
+          }
+      }).catch(err => {
+          document.getElementById("loading").style.display = "none";
+          console.error("Data Fetch Error:", err);
+      });
+  }
+
+  let autoRefreshTimer = null, isAutoRefresh = false;
+  function toggleAutoRefresh() { isAutoRefresh ? stopAutoRefresh() : startAutoRefresh(); }
+  function startAutoRefresh() {
+    isAutoRefresh = true;
+    document.getElementById("auto-refresh-btn").classList.add("btn-active");
+    document.getElementById("ar-icon").innerText = "▶";
+    document.getElementById("countdown-bar").style.display = "block";
+    scheduleNext();
+  }
+  function stopAutoRefresh() {
+    isAutoRefresh = false;
+    document.getElementById("auto-refresh-btn").classList.remove("btn-active");
+    document.getElementById("ar-icon").innerText = "⏸";
+    document.getElementById("countdown-bar").style.display = "none";
+    clearTimeout(autoRefreshTimer);
+  }
+  function scheduleNext() {
+    if (!isAutoRefresh) return;
+    const sec = parseInt(document.getElementById("refresh-interval").value);
+    const fill = document.getElementById("countdown-fill");
+
+    fill.style.transition = "none";
+    fill.style.width = "100%";
+    setTimeout(() => { fill.style.transition = `width ${sec}s linear`; fill.style.width = "0%"; }, 50);
+
+    clearTimeout(autoRefreshTimer);
+    autoRefreshTimer = setTimeout(() => {
+      scheduleNext(); 
+      loadChart();    
+    }, sec * 1000);
+  }
+
+  const intOpts = { minutes: [1,2,3,5,10,15,30,60], hours: [1,2,4], days: [1] };
+  function updateIntervalOptions() {
+    const sel = document.getElementById("ctrl-interval");
+    let prev = sel.value;
+    if (!prev && document.getElementById("ctrl-unit").value === "minutes") prev = "5";
+    sel.innerHTML = "";
+    intOpts[document.getElementById("ctrl-unit").value].forEach(v => { 
+        const o = document.createElement("option"); o.value = v; o.textContent = v; 
+        if(String(v) === String(prev)) o.selected = true; sel.appendChild(o); 
+    });
+    if(!sel.value) sel.selectedIndex = 0;
+  }
+  
+  // ══════════════════════════════════════════════════════
+  //  WEBSOCKET LIVE TICKER FOR DASHBOARD
+  // ══════════════════════════════════════════════════════
+  function updateLiveCandle(liveSpotPrice, serverTimeStr) {
+      if (!candleSeries || !currentBar) return;
+
+      const unit = document.getElementById('ctrl-unit').value;
+      const interval = parseInt(document.getElementById('ctrl-interval').value) || 5;
+      const now = serverTimeStr ? new Date(serverTimeStr) : new Date();
+
+      if (unit === 'minutes') {
+          const roundedMinutes = Math.floor(now.getMinutes() / interval) * interval;
+          now.setMinutes(roundedMinutes, 0, 0);
+      } else if (unit === 'hours') {
+          const roundedHours = Math.floor(now.getHours() / interval) * interval;
+          now.setHours(roundedHours, 0, 0, 0);
+      } else {
+          now.setHours(0, 0, 0, 0);
+      }
+
+      const currentTimestamp = Math.floor(now.getTime() / 1000) + 19800; // IST Offset
+
+      if (currentBar.time !== currentTimestamp) {
+          currentBar = { time: currentTimestamp, open: liveSpotPrice, high: liveSpotPrice, low: liveSpotPrice, close: liveSpotPrice };
+      } else {
+          currentBar.close = liveSpotPrice;
+          if (liveSpotPrice > currentBar.high) currentBar.high = liveSpotPrice;
+          if (liveSpotPrice < currentBar.low)  currentBar.low  = liveSpotPrice;
+      }
+
+      candleSeries.update(currentBar);
+      document.getElementById('tp-close').textContent = liveSpotPrice.toFixed(2);
+  }
+
+  let liveSocket = null;
+  function startLiveTicker() {
+      if (liveSocket) liveSocket.close();
+
+      const symbol = document.getElementById('ctrl-symbol').value.trim() || 'NIFTY';
+      const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+      const wsUrl = `${wsScheme}://${window.location.host}/ws/options/`; 
+
+      liveSocket = new WebSocket(wsUrl);
+
+      liveSocket.onopen = function() { console.log("🟢 Dashboard WS Connected!"); };
+
+      liveSocket.onmessage = function(e) {
+          if (!isAutoRefresh) return;
+          try {
+              const data = JSON.parse(e.data);
+              if (data.symbol === symbol && data.spot_price) {
+                  let spotPrice = parseFloat(data.spot_price);
+                  const serverTime = data.data_time; 
+                  updateLiveCandle(spotPrice, serverTime);
+              }
+          } catch (err) { console.warn("WS error:", err); }
+      };
+
+      liveSocket.onclose = function() { setTimeout(startLiveTicker, 3000); };
+  }
+
+  // अगर Django से date नहीं आई है, तो JS से आज की डेट सेट करें
+  function setDefaultDates() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
+    
+    let fromEl = document.getElementById('ctrl-from');
+    let toEl = document.getElementById('ctrl-to');
+    
+    if (!fromEl.value || fromEl.value === 'None') fromEl.value = todayStr;
+    if (!toEl.value || toEl.value === 'None') toEl.value = todayStr;
+  }
+
+  setDefaultDates();
+  updateIntervalOptions();
+  loadChart();
+  startAutoRefresh(); 
+  startLiveTicker();
+</script>
+</body>
+</html>
