@@ -39,3 +39,4 @@ projects:
       plan: free
       region: oregon
       maxmemoryPolicy: noeviction
+      ipAllowList: []
