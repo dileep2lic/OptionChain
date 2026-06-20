@@ -1,0 +1,41 @@
+# Exported from Render on 2026-06-20T15:00:06Z
+version: "1"
+projects:
+- name: My project
+  environments:
+  - name: Production
+    services:
+    # --- 1. आपका वेब ऐप (Web Service) ---
+    - type: web
+      name: optionChain
+      runtime: python
+      repo: https://github.com/dileep2lic/OptionChain
+      plan: free
+      region: oregon
+      buildCommand: ./build.sh
+      startCommand: ./start.sh
+      autoDeployTrigger: commit
+      envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      # यहाँ आप अपनी Groq API Key पेस्ट करेंगे
+      - key: GROQ_API_KEY
+        sync: false
+      # यहाँ बदलाव किया गया है: अब आप अपने खुद के PostgreSQL डेटाबेस की की (URL) पेस्ट कर सकेंगे
+      - key: DATABASE_URL
+        sync: false
+      # Redis अपने आप नीचे वाले Redis सर्वर से कनेक्ट हो जाएगा
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: optionchain-cache
+          property: connectionString
+          
+    # --- 2. नया Redis कैशे (Redis Service) ---
+    - type: redis
+      name: optionchain-cache
+      plan: free
+      region: oregon
+      maxmemoryPolicy: noeviction
