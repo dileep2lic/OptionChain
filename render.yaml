@@ -15,6 +15,7 @@ projects:
       buildCommand: ./build.sh
       startCommand: ./start.sh
       autoDeployTrigger: commit
+      pythonVersion: "3.12.9"
       envVars:
       - key: DEBUG
         value: "False"
