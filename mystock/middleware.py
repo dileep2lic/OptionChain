@@ -3,14 +3,17 @@ from django.contrib.auth import logout
 from django.shortcuts import redirect
 from django.contrib import messages
 
+
 class KickOutMiddleware:
-    async_capable = True
-    sync_capable = False
+    """
+    Sync middleware — Django/asgiref का adapt_method_mode इसे ASGI context में
+    automatically thread pool में run करता है। यह सबसे safe और compatible तरीका है।
+    """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
-    async def __call__(self, request):
+    def __call__(self, request):
         # अगर यूजर लॉगिन है, तभी चेक करें
         if request.user.is_authenticated:
             current_session_key = request.session.session_key
@@ -25,5 +28,4 @@ class KickOutMiddleware:
                 messages.error(request, "⚠️ आपका अकाउंट किसी दूसरे डिवाइस पर लॉगिन हो गया है, इसलिए आपको यहाँ से लॉगआउट कर दिया गया है।")
                 return redirect('login')
 
-        response = await self.get_response(request)
-        return response
+        return self.get_response(request)
