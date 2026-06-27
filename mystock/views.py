@@ -426,6 +426,152 @@ def toggle_user_status(request, user_id):
     
     return redirect('user_approval_list')
 
+
+# ── Git Release API ─────────────────────────────────────────────
+import subprocess
+import os
+
+@admin_only
+@csrf_exempt
+def git_release_api(request):
+    """Admin Panel से Git Release (Tag) बनाने के लिए API।
+    सिर्फ Superuser ही इसे call कर सकता है।
+    केवल staged (git add की हुई) फाइलें ही commit होंगी।
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'msg': 'Invalid method'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        bump_type = data.get('bump_type', '').strip()   # 'major', 'minor', 'patch'
+        message   = data.get('message',   '').strip()
+
+        # Validate inputs
+        if bump_type not in ('major', 'minor', 'patch'):
+            return JsonResponse({'status': 'error', 'msg': "bump_type must be 'major', 'minor', या 'patch'."})
+        if not message:
+            return JsonResponse({'status': 'error', 'msg': 'Commit message खाली नहीं हो सकता।'})
+
+        # Project root (manage.py की directory)
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        # ── पहले check करो कि कुछ staged है या नहीं ──────────────────
+        staged_check = subprocess.run(
+            ['git', 'diff', '--cached', '--name-only'],
+            capture_output=True, text=True, timeout=10, cwd=project_root
+        )
+        staged_files = [f.strip() for f in staged_check.stdout.strip().splitlines() if f.strip()]
+
+        if not staged_files:
+            # Unstaged changes की list निकालो (info के लिए)
+            unstaged = subprocess.run(
+                ['git', 'status', '--short'],
+                capture_output=True, text=True, timeout=10, cwd=project_root
+            )
+            return JsonResponse({
+                'status': 'no_staged',
+                'msg':    '⚠️ कोई भी फाइल staged नहीं है! पहले git add करें।',
+                'unstaged_info': unstaged.stdout.strip(),
+            })
+        # ─────────────────────────────────────────────────────────────
+
+        script_path = os.path.join(project_root, 'release.sh')
+        if not os.path.isfile(script_path):
+            return JsonResponse({'status': 'error', 'msg': 'release.sh नहीं मिली। पहले उसे project root में रखें।'})
+
+        # Script run करो — script अब git add नहीं करती, सिर्फ commit करती है
+        result = subprocess.run(
+            ['bash', script_path, bump_type, message],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=project_root,
+        )
+
+        output   = result.stdout.strip()
+        stderr   = result.stderr.strip()
+        combined = output + ('\n' + stderr if stderr else '')
+
+        if result.returncode == 0:
+            # नया वर्ज़न output से निकालो
+            new_version = ''
+            for line in output.splitlines():
+                if 'टैग बन गया' in line:
+                    parts = line.split()
+                    for p in parts:
+                        if p.startswith('v') and '.' in p:
+                            new_version = p
+                            break
+            return JsonResponse({
+                'status':       'success',
+                'msg':          f'🎉 Release {new_version} successfully created!',
+                'new_version':  new_version,
+                'staged_files': staged_files,
+                'output':       combined,
+            })
+        else:
+            return JsonResponse({
+                'status': 'error',
+                'msg':    'Script में कुछ गड़बड़ हुई — नीचे output देखें।',
+                'output': combined,
+            })
+
+    except subprocess.TimeoutExpired:
+        return JsonResponse({'status': 'error', 'msg': 'Script timeout (60s) — git push में देरी हो रही है।'})
+    except json.JSONDecodeError:
+        return JsonResponse({'status': 'error', 'msg': 'Invalid JSON body।'})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'msg': str(e)})
+
+
+@admin_only
+def git_current_version_api(request):
+    """वर्तमान git tag (latest version) return करता है।"""
+    try:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        result = subprocess.run(
+            ['git', 'describe', '--tags', '--abbrev=0'],
+            capture_output=True, text=True, timeout=10, cwd=project_root
+        )
+        version = result.stdout.strip() if result.returncode == 0 else 'कोई tag नहीं'
+        return JsonResponse({'version': version})
+    except Exception as e:
+        return JsonResponse({'version': '⚠️ Error', 'error': str(e)})
+
+
+@admin_only
+def git_staged_files_api(request):
+    """Admin Panel के लिए: अभी staged फाइलों की live list return करता है।"""
+    try:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Staged files (git add की हुई)
+        staged_r = subprocess.run(
+            ['git', 'diff', '--cached', '--name-status'],
+            capture_output=True, text=True, timeout=10, cwd=project_root
+        )
+        # Unstaged / untracked files (info only)
+        status_r = subprocess.run(
+            ['git', 'status', '--short'],
+            capture_output=True, text=True, timeout=10, cwd=project_root
+        )
+        staged_lines = [l.strip() for l in staged_r.stdout.strip().splitlines() if l.strip()]
+        staged_files = []
+        for line in staged_lines:
+            parts = line.split('\t', 1)
+            status_code = parts[0].strip() if parts else '?'
+            fname = parts[1].strip() if len(parts) > 1 else line
+            icon = {'A': '🟢', 'M': '🟡', 'D': '🔴', 'R': '🔵'}.get(status_code[0], '⚪')
+            staged_files.append({'icon': icon, 'status': status_code, 'file': fname})
+
+        return JsonResponse({
+            'staged':        staged_files,
+            'staged_count':  len(staged_files),
+            'status_short':  status_r.stdout.strip(),
+        })
+    except Exception as e:
+        return JsonResponse({'staged': [], 'staged_count': 0, 'error': str(e)})
+
+
 # यूजर रजिस्ट्रेशन के लिए एक नया view function:
 def register_user(request):
     if request.method == 'POST':
@@ -607,11 +753,16 @@ def option_chain_dashboard(request):
 
     अब: empty shell return करो (instant) → JS/AJAX table load करे।
     """
+    # Monika के लिए logged-in user का नाम
+    u = request.user
+    monika_user_name = (u.first_name.strip() if u.first_name and u.first_name.strip()
+                        else u.username.strip() if u.is_authenticated else '')
     return render(request, 'mystock/dashboard.html', {
         'data': [],
         'latest_time': None,
         'spot': None,
         'expiry_date': None,
+        'monika_user_name': monika_user_name,
     })
 @login_required
 def table_update_api(request):
@@ -2143,6 +2294,11 @@ def live_trades_view(request):
     settings, _ = BotSettings.objects.get_or_create(id=1)
     db_user_name = getattr(settings, 'user_name', 'बॉस')
 
+    # Monika के लिए logged-in user का नाम
+    u = request.user
+    monika_user_name = (u.first_name.strip() if u.first_name and u.first_name.strip()
+                        else u.username.strip() if u.is_authenticated else db_user_name)
+
     context = {
         'trades': trades,
         'symbol': symbol,
@@ -2160,6 +2316,7 @@ def live_trades_view(request):
         'dir_s': '',
         'is_r_closer': False,
         'user_name': db_user_name,
+        'monika_user_name': monika_user_name,
     }
 
     return render(request, 'mystock/live_trades.html', context)

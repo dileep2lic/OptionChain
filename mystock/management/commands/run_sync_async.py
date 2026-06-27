@@ -231,9 +231,7 @@ class Command(BaseCommand):
                     # 🟢 DataFrame को Dictionary में बदलकर Cache में डालें
                     live_data_dict = filtered_df.to_dict('records')
                     await set_cache_async(f'live_nifty_data_{fixes_sym}', live_data_dict, 43200)
-                    await set_cache_async(f'live_nifty_spot_{fixes_sym}', spot_price, 43200)
-
-                   
+                    await set_cache_async(f'live_nifty_spot_{fixes_sym}', spot_price, 43200)                  
                     
 
                     # 🚀 === NEW: WebSockets के ज़रिए फ्रंटएंड को तुरंत सिग्नल भेजें === 🚀
@@ -410,8 +408,11 @@ class Command(BaseCommand):
             except Exception as e:
                 logger.error(f"NIFTY Loop Error: {e}")
                 
-            # 🟢 लूप हमेशा 5 सेकंड आराम करेगा
-            await asyncio.sleep(10)
+            # 🟢 ट्रेडिंग आवर्स में 5 सेकंड आराम करेगा, और अन्य टाइम में 15 सेकंड
+            if self.is_trading_hours():
+                await asyncio.sleep(5)
+            else:
+                await asyncio.sleep(15)
             
     async def others_sr_loop(self, session, symbols, expiry):
         """Modified Loop: Process 10 symbols, wait 2s, repeat."""

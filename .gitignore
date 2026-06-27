@@ -37,7 +37,7 @@ credentials1.py
 .DS_Store
 Thumbs.db
 Lot_Size.txt
-logs/stock_sync.log
+# logs/stock_sync.log
 mystock/fetch_access_token_auto.py
 mystock/views1.py
 templates/dashboard.html
@@ -52,7 +52,9 @@ mystock/templates/trade_logic1.py
 mystock/templates/voice_commands.html
 mystock/tests.py
 Opchain.bat
-logs/stock_sync.log
 db.sqlite3-shm
-logs/stock_sync.log
 db.sqlite3-wal
+
+start१२२३.sh
+option_chain_data.csv
+Opchain.zip

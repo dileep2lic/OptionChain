@@ -42,5 +42,6 @@ yarl==1.22.0
 daphne
 channels
 channels-redis
+google-genai
 groq
 python-dotenv
